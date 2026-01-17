@@ -1,0 +1,33 @@
+{
+  "version": "2.2",
+  "description": "触控板自动开关工具 - 默认配置文件",
+  "idle_threshold": 5.0,
+  "auto_start": false,
+  "start_minimized": false,
+  "enable_sounds": true,
+  "enable_notifications": true,
+  "use_alt_keyboard_lib": false,
+  "enable_compatibility_mode": true,
+  "hotkeys": {
+    "toggle_touchpad": "ctrl+alt+t",
+    "toggle_monitoring": "ctrl+alt+m",
+    "exit_app": "ctrl+alt+q"
+  },
+  "appearance": {
+    "theme": "default",
+    "font_size": 10,
+    "window_width": 900,
+    "window_height": 700
+  },
+  "compatibility": {
+    "lenovo_legion": true,
+    "try_multiple_registry_paths": true,
+    "delay_before_enable": 0.2,
+    "min_disable_time": 0.5
+  },
+  "logging": {
+    "level": "INFO",
+    "max_size_mb": 5,
+    "backup_count": 5
+  }
+}
