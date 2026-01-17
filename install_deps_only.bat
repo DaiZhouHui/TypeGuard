@@ -82,6 +82,16 @@ if errorlevel 1 (
 )
 
 echo.
+echo 6. 正在安装pyautogui...
+pip install pyautogui>=0.9.53
+if errorlevel 1 (   
+    echo ❌ pyautogui安装失败
+    set /a ERROR_COUNT+=1
+) else (
+    echo ✓ pyautogui安装成功
+)
+
+echo.
 echo ========================================
 echo  依赖安装完成！
 echo ========================================

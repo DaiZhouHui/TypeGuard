@@ -52,6 +52,12 @@ if errorlevel 1 (
     echo ⚠  keyboard 未安装，备用键盘功能将受限
 )
 
+echo 检查pyautogui...
+python -c "import pyautogui; print('✓ pyautogui 已安装')" 2>nul
+if errorlevel 1 (
+    echo ⚠  pyautogui 未安装，键盘模拟功能将受限
+)
+
 echo.
 echo ========================================
 echo  正在启动触控板自动开关工具...
