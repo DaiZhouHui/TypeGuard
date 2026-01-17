@@ -1,11 +1,20 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo  触控板自动开关工具 - 启动脚本
+echo  触控板自动开关工具 - 运行脚本
 echo ========================================
 echo.
 
-echo [1/4] 正在检查Python环境...
+REM 获取脚本所在目录
+set SCRIPT_DIR=%~dp0
+echo 脚本目录: %SCRIPT_DIR%
+
+REM 切换到脚本目录
+cd /d "%SCRIPT_DIR%"
+echo 当前目录: %cd%
+echo.
+
+echo 正在检查Python环境...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo 错误: 未找到Python，请先安装Python 3.6+
@@ -14,158 +23,80 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Python版本:
-python --version
-
-echo [2/4] 正在检查并创建文件夹...
-if not exist "config\" mkdir config
-if not exist "log\" mkdir log
-
-echo ✓ 配置文件夹: config\
-echo ✓ 日志文件夹: log\
-
-echo [3/4] 正在检查配置文件...
-if not exist "config\default_config.json" (
-    echo 警告: 未找到默认配置文件
-    echo 正在从项目创建默认配置...
-    
-    REM 检查是否在项目目录中
-    if exist "default_config.json" (
-        copy "default_config.json" "config\" >nul
-        echo ✓ 已复制默认配置文件到 config\
-    ) else (
-        echo 正在创建默认配置文件...
-        echo { > config\default_config.json
-        echo   "version": "2.2", >> config\default_config.json
-        echo   "description": "触控板自动开关工具 - 默认配置文件", >> config\default_config.json
-        echo   "idle_threshold": 5.0, >> config\default_config.json
-        echo   "auto_start": false, >> config\default_config.json
-        echo   "start_minimized": false, >> config\default_config.json
-        echo   "enable_sounds": true, >> config\default_config.json
-        echo   "enable_notifications": true, >> config\default_config.json
-        echo   "use_alt_keyboard_lib": false, >> config\default_config.json
-        echo   "enable_compatibility_mode": true, >> config\default_config.json
-        echo   "hotkeys": { >> config\default_config.json
-        echo     "toggle_touchpad": "ctrl+alt+t", >> config\default_config.json
-        echo     "toggle_monitoring": "ctrl+alt+m", >> config\default_config.json
-        echo     "exit_app": "ctrl+alt+q" >> config\default_config.json
-        echo   }, >> config\default_config.json
-        echo   "appearance": { >> config\default_config.json
-        echo     "theme": "default", >> config\default_config.json
-        echo     "font_size": 10, >> config\default_config.json
-        echo     "window_width": 900, >> config\default_config.json
-        echo     "window_height": 700 >> config\default_config.json
-        echo   } >> config\default_config.json
-        echo } >> config\default_config.json
-        echo ✓ 已创建默认配置文件
-    )
-) else (
-    echo ✓ 找到默认配置文件
-)
-
-if exist "config\icon.ico" (
-    echo ✓ 找到图标文件
-) else (
-    echo 警告: 未找到图标文件 config\icon.ico
-    echo 程序将使用默认图标
-)
-
-echo [4/4] 正在安装依赖包...
-echo 这将安装以下依赖:
-echo   - pywin32     (Windows API访问)
-echo   - pynput      (键盘监听)
-echo   - win10toast  (Windows 10通知)
-echo   - psutil      (系统进程管理)
-echo   - keyboard    (备用键盘库)
+echo 正在检查依赖...
 echo.
-
-echo 请确保网络连接正常...
-echo 正在更新pip...
-python -m pip install --upgrade pip >nul
-
-echo.
-echo 正在安装pywin32...
-pip install pywin32>=305 >nul
+echo 检查pywin32...
+python -c "import win32api; print('✓ pywin32 已安装')" 2>nul
 if errorlevel 1 (
-    echo ❌ pywin32安装失败，Windows功能将受限
-) else (
-    echo ✓ pywin32安装成功
+    echo ❌ pywin32 未安装
+    echo 请先运行 install_deps_only.bat 安装依赖
+    pause
+    exit /b 1
+)
+
+echo 检查pynput...
+python -c "import pynput; print('✓ pynput 已安装')" 2>nul
+if errorlevel 1 (
+    echo ❌ pynput 未安装
+    echo 请先运行 install_deps_only.bat 安装依赖
+    pause
+    exit /b 1
+)
+
+echo 检查win10toast...
+python -c "from win10toast import ToastNotifier; print('✓ win10toast 已安装')" 2>nul
+if errorlevel 1 (
+    echo ⚠  win10toast 未安装，通知功能将受限
+)
+
+echo 检查psutil...
+python -c "import psutil; print('✓ psutil 已安装')" 2>nul
+if errorlevel 1 (
+    echo ⚠  psutil 未安装，进程管理功能将受限
+)
+
+echo 检查keyboard...
+python -c "import keyboard; print('✓ keyboard 已安装')" 2>nul
+if errorlevel 1 (
+    echo ⚠  keyboard 未安装，备用键盘功能将受限
+)
+
+echo 检查pyautogui...
+python -c "import pyautogui; print('✓ pyautogui 已安装')" 2>nul
+if errorlevel 1 (
+    echo ⚠  pyautogui 未安装，键盘模拟功能将受限
 )
 
 echo.
-echo 正在安装pynput...
-pip install pynput>=1.7.6 >nul
-if errorlevel 1 (
-    echo ❌ pynput安装失败，键盘监听功能将受限
-) else (
-    echo ✓ pynput安装成功
-)
-
-echo.
-echo 正在安装win10toast...
-pip install win10toast>=0.9 >nul
-if errorlevel 1 (
-    echo ❌ win10toast安装失败，通知功能将受限
-) else (
-    echo ✓ win10toast安装成功
-)
-
-echo.
-echo 正在安装psutil...
-pip install psutil>=5.9.0 >nul
-if errorlevel 1 (
-    echo ❌ psutil安装失败，进程管理功能将受限
-) else (
-    echo ✓ psutil安装成功
-)
-
-echo.
-echo 正在安装keyboard...
-pip install keyboard>=0.13.5 >nul
-if errorlevel 1 (
-    echo ❌ keyboard安装失败，备用键盘功能将受限
-) else (
-    echo ✓ keyboard安装成功
-)
-
-echo.
-echo 正在安装pyautogui...
-pip install pyautogui>=0.9.53 >nul
-if errorlevel 1 (
-    echo ❌ pyautogui安装失败，键盘模拟功能将受限
-) else (
-    echo ✓ pyautogui安装成功
+echo 检查主程序文件...
+if not exist "touchpad_manager.py" (
+    echo 错误: 找不到主程序文件 touchpad_manager.py
+    echo 请确保脚本在正确的目录中运行
+    echo 当前目录文件列表:
+    dir /b
+    pause
+    exit /b 1
 )
 
 echo.
 echo ========================================
-echo  准备完成！
+echo  正在启动触控板自动开关工具...
 echo ========================================
-echo.
-echo 重要提示:
-echo 1. 建议以管理员身份运行程序
-echo 2. 触控板控制需要管理员权限
-echo 3. 配置文件位置: config\default_config.json
-echo 4. 日志文件位置: log\touchpad_manager.log
-echo.
-echo 按任意键启动触控板管理工具...
-pause >nul
-
-echo.
-echo [启动] 正在启动触控板自动开关工具...
 echo.
 python touchpad_manager.py
 
 if errorlevel 1 (
     echo.
-    echo 程序启动失败，可能原因:
+    echo 程序启动失败
+    echo 可能原因:
     echo 1. 依赖包未正确安装
     echo 2. 配置文件错误
     echo 3. 系统权限不足
     echo.
     echo 建议:
     echo 1. 以管理员身份运行此脚本
-    echo 2. 查看日志文件: log\touchpad_manager.log
+    echo 2. 重新安装依赖: install_deps_only.bat
+    echo 3. 查看日志文件: log\touchpad_manager.log
     echo.
     pause
     exit /b 1

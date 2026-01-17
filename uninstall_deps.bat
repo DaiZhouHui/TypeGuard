@@ -5,6 +5,15 @@ echo  触控板自动开关工具 - 依赖卸载脚本
 echo ========================================
 echo.
 
+REM 获取脚本所在目录
+set SCRIPT_DIR=%~dp0
+echo 脚本目录: %SCRIPT_DIR%
+
+REM 切换到脚本目录
+cd /d "%SCRIPT_DIR%"
+echo 当前目录: %cd%
+echo.
+
 echo 警告: 这将卸载触控板工具的所有依赖包
 echo.
 echo 将要卸载的包:
@@ -13,6 +22,7 @@ echo   - pynput
 echo   - win10toast
 echo   - psutil
 echo   - keyboard
+echo   - pyautogui
 echo.
 set /p CONFIRM="确定要卸载吗? (Y/N): "
 
@@ -25,19 +35,22 @@ if /i "%CONFIRM%" NEQ "Y" (
 echo.
 echo 正在卸载依赖包...
 
-echo 1. 正在卸载keyboard...
+echo 1. 正在卸载pyautogui...
+pip uninstall pyautogui -y
+
+echo 2. 正在卸载keyboard...
 pip uninstall keyboard -y
 
-echo 2. 正在卸载psutil...
+echo 3. 正在卸载psutil...
 pip uninstall psutil -y
 
-echo 3. 正在卸载win10toast...
+echo 4. 正在卸载win10toast...
 pip uninstall win10toast -y
 
-echo 4. 正在卸载pynput...
+echo 5. 正在卸载pynput...
 pip uninstall pynput -y
 
-echo 5. 正在卸载pywin32...
+echo 6. 正在卸载pywin32...
 pip uninstall pywin32 -y
 
 echo.

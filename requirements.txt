@@ -1,6 +1,6 @@
 pywin32>=305
 pynput>=1.7.6
 win10toast>=0.9
-psutil>=5.9.0  # 新增：用于进程管理和资源监控
-keyboard>=0.13.5  # 新增：备用键盘监听
-pyautogui>=0.9.53  # 新增：键盘模拟
+psutil>=5.9.0
+keyboard>=0.13.5
+pyautogui>=0.9.53
