@@ -3,7 +3,7 @@
 触控板自动开关工具
 版本：2.2
 作者：AI助手
-更新：修复触控板控制问题，优化文件结构
+更新：修复触控板控制问题，优化文件结构，添加键盘快捷键支持
 """
 
 import tkinter as tk
@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 import logging
 import logging.handlers
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, Union
 import atexit
 import subprocess
 import webbrowser
@@ -87,36 +87,6 @@ def create_directories():
                 print(f"创建目录 {directory} 失败: {e}")
 
 create_directories()
-def toggle_keyboard_shortcut(self):
-    """切换键盘快捷键模式"""
-    try:
-        use_keyboard = self.use_keyboard_shortcut_var.get()
-        self.config_manager.set("use_keyboard_shortcut", use_keyboard)
-        
-        # 重新初始化触控板管理器
-        self.manager.registry_manager.use_keyboard_shortcut = use_keyboard
-        
-        status = "已启用" if use_keyboard else "已禁用"
-        self.show_notification("键盘快捷键", f"键盘快捷键模式{status}")
-        
-    except Exception as e:
-        logger.error(f"切换键盘快捷键模式失败: {e}")
-
-def test_keyboard_shortcut(self):
-    """测试键盘快捷键"""
-    try:
-        # 尝试导入测试工具
-        import subprocess
-        script_path = "keyboard_shortcut_test.py"
-        
-        if os.path.exists(script_path):
-            subprocess.Popen([sys.executable, script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
-            self.show_notification("快捷键测试", "已启动快捷键测试工具")
-        else:
-            self.show_notification("错误", "测试工具不存在，请下载完整的项目文件")
-    except Exception as e:
-        logger.error(f"启动快捷键测试工具失败: {e}")
-        messagebox.showerror("错误", f"启动测试工具失败:\n{str(e)}")
 
 # 配置日志 - 使用轮转文件处理器防止日志过大
 def setup_logging():
@@ -194,8 +164,8 @@ class RegistryManager:
     AUTO_RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
     
     def __init__(self):
-        self.detected_key_path = None
-        self.detected_value_name = None
+        self.detected_key_path: Optional[str] = None
+        self.detected_value_name: Optional[str] = None
         self.key_value_type = winreg.REG_DWORD
         self.invert_logic = False
         self.compatibility_mode = False
@@ -248,21 +218,46 @@ class RegistryManager:
                 # 如果当前状态与目标状态不同，发送快捷键
                 if (enable and not current_state) or (not enable and current_state):
                     print(f"通过快捷键切换触控板状态")
-                    return self.keyboard_simulator.toggle_touchpad_hotkey()
+                    return self._send_touchpad_hotkey()
                 else:
                     print(f"触控板已经是目标状态，无需操作")
                     return True
             else:
                 # 无法检测状态，直接发送快捷键
                 print(f"无法检测当前状态，直接发送切换快捷键")
-                return self.keyboard_simulator.toggle_touchpad_hotkey()
+                return self._send_touchpad_hotkey()
         
         # 方法3: 使用兼容模式（设备管理器）
         return self._set_via_compatibility(enable)
     
+    def _send_touchpad_hotkey(self) -> bool:
+        """发送触控板切换快捷键"""
+        if not self.keyboard_simulator:
+            return False
+        
+        try:
+            # 检查模拟器是否有 toggle_touchpad_hotkey 方法
+            if hasattr(self.keyboard_simulator, 'toggle_touchpad_hotkey'):
+                return self.keyboard_simulator.toggle_touchpad_hotkey()
+            # 如果有 send_shortcut 方法，使用默认快捷键
+            elif hasattr(self.keyboard_simulator, 'send_shortcut'):
+                # 发送 F11 快捷键（最常见的触控板切换键）
+                return self.keyboard_simulator.send_shortcut(['F11'])
+            else:
+                print("键盘模拟器没有可用的快捷键发送方法")
+                return False
+        except Exception as e:
+            print(f"发送触控板快捷键失败: {e}")
+            return False
+    
     def _set_via_registry(self, enable: bool) -> bool:
         """通过注册表设置触控板状态"""
         try:
+            # 检查必需的注册表键值
+            if not self.detected_key_path or not self.detected_value_name:
+                print("注册表键路径或值名称为空，无法通过注册表设置")
+                return False
+            
             # 根据逻辑反转设置计算值
             if self.invert_logic:
                 value = 0 if enable else 1  # 启用=0, 禁用=1
@@ -282,9 +277,11 @@ class RegistryManager:
             
             # 通知系统设置已更改
             try:
+                # 修复：确保传递正确的参数类型
                 win32api.SendMessage(win32con.HWND_BROADCAST, win32con.WM_SETTINGCHANGE, 0, 0)
-            except:
-                pass
+            except Exception as e:
+                print(f"发送设置更改消息失败: {e}")
+                # 继续执行，这不是致命错误
             
             print(f"通过注册表设置触控板: {'启用' if enable else '禁用'} (值={value})")
             return True
@@ -316,7 +313,6 @@ class RegistryManager:
             print(f"兼容模式执行失败: {e}")
             return False
     
-    # 其他方法保持不变...
     def detect_touchpad_registry(self) -> bool:
         """检测触控板注册表位置"""
         if not HAS_WINDOWS_DEPS:
@@ -398,15 +394,41 @@ class RegistryManager:
         except Exception as e:
             print(f"设备管理器查询异常: {e}")
             return None
+    
+    def set_auto_start(self, app_name: str, app_path: str, enable: bool) -> bool:
+        """设置开机自启动"""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.AUTO_RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE)
+            
+            if enable:
+                # 添加开机启动
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{app_path}" --minimized')
+                print(f"已设置开机自启动: {app_name}")
+            else:
+                # 移除开机启动
+                try:
+                    winreg.DeleteValue(key, app_name)
+                    print(f"已移除开机自启动: {app_name}")
+                except FileNotFoundError:
+                    # 如果键不存在，那就算了
+                    pass
+            
+            winreg.CloseKey(key)
+            return True
+            
+        except Exception as e:
+            print(f"设置开机自启动失败: {e}")
+            return False
+
 class HotkeyManager:
     """热键管理器 - 支持多种热键库"""
     
     def __init__(self):
-        self.hotkeys = {}
+        self.hotkeys: Dict[str, Callable] = {}
         self.listener = None
         self.alt_listener = None
         
-    def register_hotkey(self, key_combination: str, callback, use_alt_lib=False):
+    def register_hotkey(self, key_combination: str, callback: Callable, use_alt_lib=False):
         """注册热键"""
         self.hotkeys[key_combination] = callback
         logger.info(f"注册热键: {key_combination}")
@@ -490,7 +512,7 @@ class ConfigManager:
             "start_minimized": False,
             "enable_sounds": True,
             "enable_notifications": True,
-            "use_alt_keyboard_lib": False,
+            "use_keyboard_shortcut": False,
             "enable_compatibility_mode": True,  # 启用兼容模式
             "hotkeys": {
                 "toggle_touchpad": "ctrl+alt+t",
@@ -506,7 +528,18 @@ class ConfigManager:
             "compatibility": {
                 "lenovo_legion": True,
                 "try_multiple_registry_paths": True,
-                "delay_before_enable": 0.2
+                "delay_before_enable": 0.2,
+                "min_disable_time": 0.5
+            },
+            "logging": {
+                "level": "INFO",
+                "max_size_mb": 5,
+                "backup_count": 5
+            },
+            "keyboard_shortcut": {
+                "enabled": False,
+                "keys": ["F11"],
+                "display": "F11"
             }
         }
     
@@ -743,7 +776,7 @@ class TouchpadManager:
                 
                 # 获取配置的延迟时间
                 delay_before_enable = self.config_manager.get("compatibility.delay_before_enable", 0.2)
-                min_disable_duration = 0.5  # 最小禁用时间
+                min_disable_duration = self.config_manager.get("compatibility.min_disable_time", 0.5)  # 最小禁用时间
                 
                 # 计算从上次禁用到现在的时间
                 time_since_last_disable = current_time - last_disable_time
@@ -879,6 +912,9 @@ class TouchpadManager:
         # 当前会话时间
         stats["current_session"] = time.time() - self.stats["start_time"] if self.stats["start_time"] else 0
         
+        # 空闲阈值
+        stats["idle_threshold"] = self.idle_threshold
+        
         return stats
     
     def cleanup(self):
@@ -906,12 +942,23 @@ class TouchpadApp:
         self.stats_labels = {}
         self.log_text = None
         
+        # Tkinter变量将在initialize_app中创建
+        self.auto_start_var = None
+        self.start_minimized_var = None
+        self.enable_sounds_var = None
+        self.enable_notifications_var = None
+        self.use_keyboard_shortcut_var = None
+        self.compatibility_mode_var = None
+        self.idle_var = None
+        self.idle_label = None
+        
         try:
             self.initialize_app()
         except Exception as e:
             logger.critical(f"应用程序初始化失败: {e}")
             traceback.print_exc()
-            messagebox.showerror("启动错误", f"应用程序启动失败:\n{str(e)}")
+            # 注意：此时还没有创建根窗口，不能使用messagebox
+            print(f"应用程序启动失败:\n{str(e)}")
             sys.exit(1)
     
     def initialize_app(self):
@@ -941,6 +988,14 @@ class TouchpadApp:
         # 初始化管理器
         self.manager = TouchpadManager()
         self.config_manager = self.manager.config_manager
+        
+        # 初始化Tkinter变量（必须在创建根窗口后）
+        self.auto_start_var = tk.BooleanVar()
+        self.start_minimized_var = tk.BooleanVar()
+        self.enable_sounds_var = tk.BooleanVar()
+        self.enable_notifications_var = tk.BooleanVar()
+        self.use_keyboard_shortcut_var = tk.BooleanVar()
+        self.compatibility_mode_var = tk.BooleanVar()
         
         # 加载窗口大小配置
         self.load_window_geometry()
@@ -1265,7 +1320,6 @@ class TouchpadApp:
         row1_frame.grid(row=0, column=0, sticky=tk.W)
         
         # 自动启动
-        self.auto_start_var = tk.BooleanVar()
         auto_start_cb = ttk.Checkbutton(
             row1_frame,
             text="开机自动启动",
@@ -1275,7 +1329,6 @@ class TouchpadApp:
         auto_start_cb.grid(row=0, column=0, sticky=tk.W)
         
         # 启动最小化
-        self.start_minimized_var = tk.BooleanVar()
         start_minimized_cb = ttk.Checkbutton(
             row1_frame,
             text="启动时最小化到托盘",
@@ -1289,7 +1342,6 @@ class TouchpadApp:
         row2_frame.grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
         
         # 启用声音
-        self.enable_sounds_var = tk.BooleanVar()
         enable_sounds_cb = ttk.Checkbutton(
             row2_frame,
             text="启用声音提示",
@@ -1299,7 +1351,6 @@ class TouchpadApp:
         enable_sounds_cb.grid(row=0, column=0, sticky=tk.W)
         
         # 启用通知
-        self.enable_notifications_var = tk.BooleanVar()
         enable_notifications_cb = ttk.Checkbutton(
             row2_frame,
             text="启用桌面通知",
@@ -1310,10 +1361,9 @@ class TouchpadApp:
         
         # 第三行
         row3_frame = ttk.Frame(settings_frame)
-        row3_frame.grid(row=2, column=0, sticky=tk.W, pady=(10, 0)
-        # 在设置区域添加
+        row3_frame.grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
+        
         # 键盘快捷键模式
-        self.use_keyboard_shortcut_var = tk.BooleanVar(value=self.config_manager.get("use_keyboard_shortcut", False))
         use_keyboard_shortcut_cb = ttk.Checkbutton(
             row3_frame,
             text="使用键盘快捷键控制触控板",
@@ -1330,14 +1380,13 @@ class TouchpadApp:
             width=12
         ).grid(row=0, column=1, sticky=tk.W, padx=(20, 0))
                         
-        #第四行  
-        row4_frame= ttk.Frame(settings_frame)
+        # 第四行  
+        row4_frame = ttk.Frame(settings_frame)
         row4_frame.grid(row=3, column=0, sticky=tk.W, pady=(10, 0))                                                      
         
         # 兼容模式
-        self.compatibility_mode_var = tk.BooleanVar(value=True)
         compatibility_mode_cb = ttk.Checkbutton(
-            row3_frame,
+            row4_frame,
             text="启用兼容模式(推荐笔记本使用)",
             variable=self.compatibility_mode_var,
             command=self.toggle_compatibility_mode
@@ -1550,7 +1599,7 @@ class TouchpadApp:
     
     def setup_hotkeys(self):
         """设置热键"""
-        use_alt_lib = self.config_manager.get("use_alt_keyboard_lib", False)
+        use_alt_lib = self.config_manager.get("use_keyboard_shortcut", False)
         hotkeys = self.config_manager.get("hotkeys", {})
         
         # 注册热键
@@ -1586,6 +1635,7 @@ class TouchpadApp:
             self.start_minimized_var.set(self.config_manager.get("start_minimized", False))
             self.enable_sounds_var.set(self.config_manager.get("enable_sounds", True))
             self.enable_notifications_var.set(self.config_manager.get("enable_notifications", True))
+            self.use_keyboard_shortcut_var.set(self.config_manager.get("use_keyboard_shortcut", False))
             self.compatibility_mode_var.set(self.config_manager.get("enable_compatibility_mode", True))
             
             # 更新空闲阈值
@@ -1740,6 +1790,37 @@ class TouchpadApp:
             
         except Exception as e:
             logger.error(f"切换兼容模式失败: {e}")
+    
+    def toggle_keyboard_shortcut(self):
+        """切换键盘快捷键模式"""
+        try:
+            use_keyboard = self.use_keyboard_shortcut_var.get()
+            self.config_manager.set("use_keyboard_shortcut", use_keyboard)
+            
+            # 重新初始化触控板管理器
+            self.manager.registry_manager.use_keyboard_shortcut = use_keyboard
+            
+            status = "已启用" if use_keyboard else "已禁用"
+            self.show_notification("键盘快捷键", f"键盘快捷键模式{status}")
+            
+        except Exception as e:
+            logger.error(f"切换键盘快捷键模式失败: {e}")
+    
+    def test_keyboard_shortcut(self):
+        """测试键盘快捷键"""
+        try:
+            # 尝试导入测试工具
+            import subprocess
+            script_path = "keyboard_shortcut_test.py"
+            
+            if os.path.exists(script_path):
+                subprocess.Popen([sys.executable, script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                self.show_notification("快捷键测试", "已启动快捷键测试工具")
+            else:
+                self.show_notification("错误", "测试工具不存在，请下载完整的项目文件")
+        except Exception as e:
+            logger.error(f"启动快捷键测试工具失败: {e}")
+            messagebox.showerror("错误", f"启动测试工具失败:\n{str(e)}")
     
     def minimize_window(self):
         """最小化窗口"""

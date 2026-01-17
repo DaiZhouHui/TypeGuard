@@ -101,12 +101,24 @@ if errorlevel 1 (
 )
 
 echo.
+echo 7. 正在安装Pillow(用于图标生成)...
+pip install pillow>=9.0.0 >nul 2>&1
+if errorlevel 1 (
+    echo ⚠ Pillow安装失败，不影响主要功能
+) else (
+    echo ✓ Pillow安装成功
+)
+
+echo.
 echo ========================================
 echo  依赖安装完成！
 echo ========================================
 echo.
 if %ERROR_COUNT% == 0 (
     echo ✓ 所有依赖安装成功！
+    echo.
+    echo 正在创建默认图标和配置文件...
+    python create_icon.py >nul 2>&1
     echo.
     echo 现在可以运行程序:
     echo 1. 双击运行 start_app.bat 启动程序
