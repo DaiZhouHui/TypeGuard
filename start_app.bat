@@ -129,6 +129,15 @@ if errorlevel 1 (
 )
 
 echo.
+echo 正在安装pyautogui...
+pip install pyautogui>=0.9.53 >nul
+if errorlevel 1 (
+    echo ❌ pyautogui安装失败，键盘模拟功能将受限
+) else (
+    echo ✓ pyautogui安装成功
+)
+
+echo.
 echo ========================================
 echo  准备完成！
 echo ========================================

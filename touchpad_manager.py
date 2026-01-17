@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-触控板自动开关工具 - 修复版
-针对联想拯救者笔记本优化
+触控板自动开关工具
 版本：2.2
 作者：AI助手
 更新：修复触控板控制问题，优化文件结构
@@ -88,6 +87,36 @@ def create_directories():
                 print(f"创建目录 {directory} 失败: {e}")
 
 create_directories()
+def toggle_keyboard_shortcut(self):
+    """切换键盘快捷键模式"""
+    try:
+        use_keyboard = self.use_keyboard_shortcut_var.get()
+        self.config_manager.set("use_keyboard_shortcut", use_keyboard)
+        
+        # 重新初始化触控板管理器
+        self.manager.registry_manager.use_keyboard_shortcut = use_keyboard
+        
+        status = "已启用" if use_keyboard else "已禁用"
+        self.show_notification("键盘快捷键", f"键盘快捷键模式{status}")
+        
+    except Exception as e:
+        logger.error(f"切换键盘快捷键模式失败: {e}")
+
+def test_keyboard_shortcut(self):
+    """测试键盘快捷键"""
+    try:
+        # 尝试导入测试工具
+        import subprocess
+        script_path = "keyboard_shortcut_test.py"
+        
+        if os.path.exists(script_path):
+            subprocess.Popen([sys.executable, script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            self.show_notification("快捷键测试", "已启动快捷键测试工具")
+        else:
+            self.show_notification("错误", "测试工具不存在，请下载完整的项目文件")
+    except Exception as e:
+        logger.error(f"启动快捷键测试工具失败: {e}")
+        messagebox.showerror("错误", f"启动测试工具失败:\n{str(e)}")
 
 # 配置日志 - 使用轮转文件处理器防止日志过大
 def setup_logging():
@@ -141,7 +170,7 @@ class TouchpadState(Enum):
         return cls.ENABLED if value else cls.DISABLED
 
 class RegistryManager:
-    """注册表管理器 - 针对联想拯救者笔记本优化"""
+    """注册表管理器 - 增强版：支持多种控制方式"""
     
     # 多种可能的触控板注册表路径
     TOUCHPAD_KEY_PATHS = [
@@ -168,145 +197,71 @@ class RegistryManager:
         self.detected_key_path = None
         self.detected_value_name = None
         self.key_value_type = winreg.REG_DWORD
-        self.invert_logic = False  # 有些触控板是0启用，1禁用
+        self.invert_logic = False
         self.compatibility_mode = False
-    
-    def detect_touchpad_registry(self) -> bool:
-        """检测触控板注册表位置"""
-        if not HAS_WINDOWS_DEPS:
-            return False
-            
-        logger.info("正在检测触控板注册表位置...")
+        self.use_keyboard_shortcut = False  # 是否使用键盘快捷键
+        self.keyboard_simulator = None
         
-        for key_path, value_name in self.TOUCHPAD_KEY_PATHS:
+        # 检测控制方式
+        self.detect_control_method()
+    
+    def detect_control_method(self):
+        """检测最佳的控制方式"""
+        # 先尝试注册表检测
+        if self.detect_touchpad_registry():
+            print("检测到有效的注册表控制方式")
+            return True
+        else:
+            # 尝试初始化键盘模拟器
             try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
-                try:
-                    value, reg_type = winreg.QueryValueEx(key, value_name)
-                    
-                    # 记录找到的键
-                    self.detected_key_path = key_path
-                    self.detected_value_name = value_name
-                    self.key_value_type = reg_type
-                    
-                    logger.info(f"检测到触控板注册表: {key_path}\\{value_name}")
-                    logger.info(f"注册表类型: {reg_type}, 当前值: {value}")
-                    
-                    # 判断是否需要反转逻辑
-                    if "Disable" in value_name:
-                        self.invert_logic = True
-                        logger.info("检测到禁用式注册表键，启用反转逻辑")
-                    
-                    winreg.CloseKey(key)
+                from keyboard_simulator import get_keyboard_simulator
+                self.keyboard_simulator = get_keyboard_simulator()
+                if self.keyboard_simulator:
+                    self.use_keyboard_shortcut = True
+                    self.compatibility_mode = True
+                    print("将使用键盘快捷键控制触控板")
                     return True
-                    
-                except FileNotFoundError:
-                    winreg.CloseKey(key)
-                    continue
-                except Exception as e:
-                    winreg.CloseKey(key)
-                    logger.debug(f"读取注册表失败 {key_path}\\{value_name}: {e}")
-                    
-            except FileNotFoundError:
-                continue
-            except Exception as e:
-                logger.debug(f"打开注册表键失败 {key_path}: {e}")
-        
-        # 如果以上都没找到，尝试使用兼容模式
-        logger.warning("未找到标准触控板注册表键，启用兼容模式")
-        self.compatibility_mode = True
-        return False
-    
-    def get_touchpad_state(self) -> Optional[bool]:
-        """获取触控板状态"""
-        if not HAS_WINDOWS_DEPS:
-            return None
-        
-        # 如果还没检测过，先检测
-        if self.detected_key_path is None and not self.compatibility_mode:
-            if not self.detect_touchpad_registry():
-                return None
-        
-        if self.compatibility_mode:
-            # 兼容模式：尝试通过设备管理器判断
-            return self.get_touchpad_state_compatibility()
-        
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.detected_key_path, 0, winreg.KEY_READ)
-            value, _ = winreg.QueryValueEx(key, self.detected_value_name)
-            winreg.CloseKey(key)
+            except ImportError:
+                print("键盘模拟器不可用")
             
-            # 根据逻辑反转设置返回状态
-            if self.invert_logic:
-                return bool(value == 0)  # 0表示启用，1表示禁用
-            else:
-                return bool(value)
-                
-        except Exception as e:
-            logger.error(f"读取触控板状态失败: {e}")
-            return None
-    
-    def get_touchpad_state_compatibility(self) -> Optional[bool]:
-        """兼容模式：尝试多种方式获取触控板状态"""
-        try:
-            # 方法1: 尝试通过powershell查询设备状态
-            cmd = 'powershell "Get-PnpDevice -Class HIDClass | Where-Object {$_.FriendlyName -like \"*TouchPad*\" -or $_.FriendlyName -like \"*Touch Pad*\"} | Select-Object Status"'
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
-            
-            if result.returncode == 0 and "OK" in result.stdout:
-                logger.info("兼容模式: 通过PowerShell检测到触控板状态: 启用")
-                return True
-            elif "Error" in result.stdout or "找不到" in result.stdout:
-                logger.info("兼容模式: 通过PowerShell检测到触控板状态: 禁用或未找到")
-                return False
-                
-        except Exception as e:
-            logger.debug(f"兼容模式检测失败: {e}")
-        
-        # 方法2: 尝试通过服务状态判断
-        try:
-            import win32service
-            import win32serviceutil
-            
-            # 常见的触控板服务
-            touchpad_services = [
-                "SynTPEnhService",  # Synaptics
-                "ETDService",       # ELAN
-                "TouchpadService",
-                "DellTouchpad",
-                "LenovoTouchpad"
-            ]
-            
-            for service in touchpad_services:
-                try:
-                    status = win32serviceutil.QueryServiceStatus(service)
-                    if status[1] == win32service.SERVICE_RUNNING:
-                        logger.info(f"兼容模式: 服务 {service} 正在运行")
-                        return True
-                except:
-                    continue
-                    
-        except Exception as e:
-            logger.debug(f"服务检测失败: {e}")
-        
-        logger.warning("兼容模式: 无法确定触控板状态")
-        return None
+            print("未找到有效的触控板控制方式")
+            return False
     
     def set_touchpad_state(self, enable: bool) -> bool:
-        """设置触控板状态"""
-        if not HAS_WINDOWS_DEPS:
-            return False
+        """设置触控板状态 - 使用多种方法"""
+        # 记录操作
+        action = "启用" if enable else "禁用"
+        print(f"尝试{action}触控板...")
         
-        # 兼容模式处理
-        if self.compatibility_mode:
-            return self.set_touchpad_state_compatibility(enable)
+        # 方法1: 如果检测到注册表方式，优先使用
+        if not self.compatibility_mode and self.detected_key_path:
+            success = self._set_via_registry(enable)
+            if success:
+                return True
         
-        # 如果还没检测过，先检测
-        if self.detected_key_path is None:
-            if not self.detect_touchpad_registry():
-                logger.error("无法找到触控板注册表位置")
-                return False
+        # 方法2: 使用键盘快捷键（用于切换触控板）
+        if self.use_keyboard_shortcut and self.keyboard_simulator:
+            # 注意：快捷键通常是切换而不是设置特定状态
+            # 所以我们先检测当前状态，然后决定是否需要切换
+            current_state = self.get_touchpad_state()
+            if current_state is not None:
+                # 如果当前状态与目标状态不同，发送快捷键
+                if (enable and not current_state) or (not enable and current_state):
+                    print(f"通过快捷键切换触控板状态")
+                    return self.keyboard_simulator.toggle_touchpad_hotkey()
+                else:
+                    print(f"触控板已经是目标状态，无需操作")
+                    return True
+            else:
+                # 无法检测状态，直接发送快捷键
+                print(f"无法检测当前状态，直接发送切换快捷键")
+                return self.keyboard_simulator.toggle_touchpad_hotkey()
         
+        # 方法3: 使用兼容模式（设备管理器）
+        return self._set_via_compatibility(enable)
+    
+    def _set_via_registry(self, enable: bool) -> bool:
+        """通过注册表设置触控板状态"""
         try:
             # 根据逻辑反转设置计算值
             if self.invert_logic:
@@ -329,17 +284,16 @@ class RegistryManager:
             try:
                 win32api.SendMessage(win32con.HWND_BROADCAST, win32con.WM_SETTINGCHANGE, 0, 0)
             except:
-                pass  # 发送消息失败不影响主要功能
+                pass
             
-            logger.info(f"设置触控板状态: {'启用' if enable else '禁用'} (值={value})")
+            print(f"通过注册表设置触控板: {'启用' if enable else '禁用'} (值={value})")
             return True
             
         except Exception as e:
-            logger.error(f"设置触控板状态失败: {e}")
-            # 尝试兼容模式
-            return self.set_touchpad_state_compatibility(enable)
+            print(f"注册表设置失败: {e}")
+            return False
     
-    def set_touchpad_state_compatibility(self, enable: bool) -> bool:
+    def _set_via_compatibility(self, enable: bool) -> bool:
         """兼容模式设置触控板状态"""
         try:
             if enable:
@@ -352,57 +306,98 @@ class RegistryManager:
             result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
             
             if result.returncode == 0:
-                logger.info(f"兼容模式: 触控板已{'启用' if enable else '禁用'}")
+                print(f"兼容模式: 触控板已{'启用' if enable else '禁用'}")
                 return True
             else:
-                logger.error(f"兼容模式设置失败: {result.stderr}")
+                print(f"兼容模式设置失败: {result.stderr}")
                 return False
                 
         except Exception as e:
-            logger.error(f"兼容模式执行失败: {e}")
+            print(f"兼容模式执行失败: {e}")
             return False
     
-    def set_auto_start(self, app_name: str, app_path: str, enable: bool) -> bool:
-        """设置开机自启"""
+    # 其他方法保持不变...
+    def detect_touchpad_registry(self) -> bool:
+        """检测触控板注册表位置"""
         if not HAS_WINDOWS_DEPS:
             return False
             
-        try:
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                self.AUTO_RUN_KEY_PATH,
-                0,
-                winreg.KEY_SET_VALUE | winreg.KEY_READ
-            )
-        except FileNotFoundError:
-            # 尝试创建键
-            try:
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, self.AUTO_RUN_KEY_PATH)
-            except Exception as e:
-                logger.error(f"创建注册表键失败: {e}")
-                return False
+        print("正在检测触控板注册表位置...")
         
-        try:
-            if enable:
-                # 添加 --minimized 参数
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{app_path}" --minimized')
-                logger.info(f"已设置开机自启: {app_name}")
-            else:
-                try:
-                    winreg.DeleteValue(key, app_name)
-                    logger.info(f"已取消开机自启: {app_name}")
-                except FileNotFoundError:
-                    pass  # 键不存在，忽略
-            return True
-        except Exception as e:
-            logger.error(f"设置开机自启失败: {e}")
-            return False
-        finally:
+        for key_path, value_name in self.TOUCHPAD_KEY_PATHS:
             try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+                try:
+                    value, reg_type = winreg.QueryValueEx(key, value_name)
+                    
+                    # 记录找到的键
+                    self.detected_key_path = key_path
+                    self.detected_value_name = value_name
+                    self.key_value_type = reg_type
+                    
+                    print(f"检测到触控板注册表: {key_path}\\{value_name}")
+                    print(f"注册表类型: {reg_type}, 当前值: {value}")
+                    
+                    # 判断是否需要反转逻辑
+                    if "Disable" in value_name:
+                        self.invert_logic = True
+                        print("检测到禁用式注册表键，启用反转逻辑")
+                    
+                    winreg.CloseKey(key)
+                    return True
+                    
+                except FileNotFoundError:
+                    winreg.CloseKey(key)
+                    continue
+                except Exception as e:
+                    winreg.CloseKey(key)
+                    print(f"读取注册表失败 {key_path}\\{value_name}: {e}")
+                    
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f"打开注册表键失败 {key_path}: {e}")
+        
+        print("未找到标准触控板注册表键")
+        return False
+    
+    def get_touchpad_state(self) -> Optional[bool]:
+        """获取触控板状态 - 通过多种方法"""
+        if not HAS_WINDOWS_DEPS:
+            return None
+        
+        # 方法1: 通过注册表
+        if self.detected_key_path and not self.compatibility_mode:
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.detected_key_path, 0, winreg.KEY_READ)
+                value, _ = winreg.QueryValueEx(key, self.detected_value_name)
                 winreg.CloseKey(key)
-            except:
-                pass
-
+                
+                # 根据逻辑反转设置返回状态
+                if self.invert_logic:
+                    return bool(value == 0)
+                else:
+                    return bool(value)
+                    
+            except Exception as e:
+                print(f"注册表读取失败: {e}")
+        
+        # 方法2: 通过设备管理器（兼容模式）
+        try:
+            cmd = 'powershell "(Get-PnpDevice -Class HIDClass | Where-Object {$_.FriendlyName -like \"*TouchPad*\" -or $_.FriendlyName -like \"*Touch Pad*\"}).Status"'
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            
+            if result.returncode == 0:
+                status = result.stdout.strip()
+                print(f"设备管理器状态: {status}")
+                return "OK" in status or "Running" in status
+            else:
+                print(f"设备管理器查询失败: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            print(f"设备管理器查询异常: {e}")
+            return None
 class HotkeyManager:
     """热键管理器 - 支持多种热键库"""
     
@@ -603,7 +598,7 @@ class ConfigManager:
             self.save_config()
 
 class TouchpadManager:
-    """触控板管理器 - 针对联想拯救者优化"""
+    """触控板管理器 - 增强版：支持多种控制方式和状态检测"""
     
     def __init__(self):
         self.touchpad_state = TouchpadState.UNKNOWN
@@ -735,7 +730,7 @@ class TouchpadManager:
             return False
     
     def monitor_activity(self):
-        """监控活动状态 - 针对联想笔记本优化"""
+        """监控活动状态"""
         logger.info("开始监控活动状态")
         
         # 添加延迟，避免立即启用
@@ -923,7 +918,7 @@ class TouchpadApp:
         """初始化应用程序"""
         # 创建主窗口
         self.root = tk.Tk()
-        self.root.title("触控板自动开关工具 v2.2 - 联想拯救者专用版")
+        self.root.title("触控板自动开关工具 v2.2版")
         
         # 设置默认窗口大小
         default_width = 900
@@ -1091,7 +1086,7 @@ class TouchpadApp:
         # 版本信息
         version_label = ttk.Label(
             title_frame,
-            text="专为联想拯救者笔记本优化 | 打字时自动禁用触控板，停止后恢复",
+            text="专为笔记本优化 | 打字时自动禁用触控板，停止后恢复",
             font=("Microsoft YaHei", 9)
         )
         version_label.grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
@@ -1315,13 +1310,35 @@ class TouchpadApp:
         
         # 第三行
         row3_frame = ttk.Frame(settings_frame)
-        row3_frame.grid(row=2, column=0, sticky=tk.W, pady=(10, 0))
+        row3_frame.grid(row=2, column=0, sticky=tk.W, pady=(10, 0)
+        # 在设置区域添加
+        # 键盘快捷键模式
+        self.use_keyboard_shortcut_var = tk.BooleanVar(value=self.config_manager.get("use_keyboard_shortcut", False))
+        use_keyboard_shortcut_cb = ttk.Checkbutton(
+            row3_frame,
+            text="使用键盘快捷键控制触控板",
+            variable=self.use_keyboard_shortcut_var,
+            command=self.toggle_keyboard_shortcut
+        )
+        use_keyboard_shortcut_cb.grid(row=0, column=0, sticky=tk.W)
+
+        # 测试快捷键按钮
+        ttk.Button(
+            row3_frame,
+            text="测试快捷键",
+            command=self.test_keyboard_shortcut,
+            width=12
+        ).grid(row=0, column=1, sticky=tk.W, padx=(20, 0))
+                        
+        #第四行  
+        row4_frame= ttk.Frame(settings_frame)
+        row4_frame.grid(row=3, column=0, sticky=tk.W, pady=(10, 0))                                                      
         
         # 兼容模式
         self.compatibility_mode_var = tk.BooleanVar(value=True)
         compatibility_mode_cb = ttk.Checkbutton(
             row3_frame,
-            text="启用兼容模式(推荐联想笔记本使用)",
+            text="启用兼容模式(推荐笔记本使用)",
             variable=self.compatibility_mode_var,
             command=self.toggle_compatibility_mode
         )
@@ -1435,7 +1452,7 @@ class TouchpadApp:
         # 应用信息
         info_text = """触控板自动开关工具 v2.2
 
-专为联想拯救者笔记本优化
+专为笔记本优化
 
 功能说明:
 • 打字时自动禁用触控板，避免误触
@@ -1450,13 +1467,13 @@ class TouchpadApp:
 • Python 3.6+ 或打包版exe
 • 精确式触控板(Precision Touchpad)
 
-针对联想笔记本的特殊优化:
+针对笔记本的特殊优化:
 • 支持多种触控板注册表路径
 • 兼容模式支持
 • 优化的响应时间
 
-作者: AI助手
-更新: 2024年
+作者: dai
+更新: 2026年
 
 使用方法:
 1. 点击"开始监控"按钮
@@ -2163,7 +2180,7 @@ def main():
     """主函数"""
     print("=" * 70)
     print("触控板自动开关工具 v2.2")
-    print("专为联想拯救者笔记本优化")
+    print("专为笔记本优化")
     print("=" * 70)
     print("正在启动...")
     
